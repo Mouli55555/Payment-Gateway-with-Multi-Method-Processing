@@ -7,13 +7,12 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
-import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import java.util.Collections;
-
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Optional;
 
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
@@ -24,11 +23,15 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         this.merchantRepository = merchantRepository;
     }
 
+    // ✅ VERY IMPORTANT FIX
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path.equals("/health")
-                || path.equals("/api/v1/test/merchant");
+
+        return path.startsWith("/health")
+                || path.startsWith("/api/v1/test")
+                || path.startsWith("/api/v1/orders/public")
+                || path.startsWith("/api/v1/payments/public");
     }
 
     @Override
@@ -59,19 +62,16 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         Merchant merchant = merchantOpt.get();
 
         try {
-            // ✅ Set merchant in ThreadLocal
             MerchantContext.set(merchant);
 
-            // ✅ THIS IS THE MISSING LINE (CRITICAL)
-            UsernamePasswordAuthenticationToken authentication =
+            UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(
                             merchant.getId(),
                             null,
                             Collections.emptyList()
                     );
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-
+            SecurityContextHolder.getContext().setAuthentication(auth);
             filterChain.doFilter(request, response);
 
         } finally {
@@ -80,11 +80,9 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         }
     }
 
-
     private void sendAuthError(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-
         response.getWriter().write("""
             {
               "error": {

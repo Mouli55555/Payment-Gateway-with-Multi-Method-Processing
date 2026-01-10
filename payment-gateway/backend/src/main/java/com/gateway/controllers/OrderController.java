@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/orders")
+@CrossOrigin(origins = "*")
 public class OrderController {
 
     private final OrderService orderService;
@@ -54,4 +55,18 @@ public class OrderController {
                 .status(order.getStatus())
                 .build();
     }
+
+    @GetMapping("/public/{orderId}")
+    public OrderResponse getOrderPublic(@PathVariable String orderId) {
+
+        Order order = orderService.getOrderPublic(orderId);
+
+        return OrderResponse.builder()
+                .id(order.getId())
+                .amount(order.getAmount())
+                .currency(order.getCurrency())
+                .status(order.getStatus())
+                .build();
+    }
+
 }

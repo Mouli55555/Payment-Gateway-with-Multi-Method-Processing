@@ -49,4 +49,9 @@ public class OrderService {
                 .replace("-", "")
                 .substring(0, 14);
     }
+    public Order getOrderPublic(String orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new NotFoundException("Order not found"));
+    }
+
 }

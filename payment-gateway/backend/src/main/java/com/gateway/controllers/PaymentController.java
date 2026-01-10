@@ -11,8 +11,11 @@ import com.gateway.services.PaymentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/payments")
+@CrossOrigin(origins = "*")
 public class PaymentController {
 
     private final PaymentService paymentService;
@@ -27,7 +30,7 @@ public class PaymentController {
     }
 
     /* =============================
-       CREATE PAYMENT
+       CREATE PAYMENT (MERCHANT)
        ============================= */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -35,26 +38,47 @@ public class PaymentController {
             @RequestBody CreatePaymentRequest request
     ) {
         Merchant merchant = MerchantContext.get();
-
         Payment payment = paymentService.createPayment(request, merchant);
+        return PaymentResponse.from(payment);
+    }
+
+    /* =============================
+       CREATE PAYMENT (PUBLIC / CHECKOUT)
+       ============================= */
+    @PostMapping("/public")
+    @ResponseStatus(HttpStatus.CREATED)
+    public PaymentResponse createPaymentPublic(
+            @RequestBody CreatePaymentRequest request
+    ) {
+        Payment payment = paymentService.createPaymentPublic(request);
+        return PaymentResponse.from(payment);
+    }
+
+    /* =============================
+       GET PAYMENT (PUBLIC POLLING)
+       ============================= */
+    @GetMapping("/public/{paymentId}")
+    public PaymentResponse getPaymentPublic(@PathVariable String paymentId) {
+
+        Payment payment = paymentRepository
+                .findById(paymentId)
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         return PaymentResponse.from(payment);
     }
 
     /* =============================
-       GET PAYMENT
+       LIST PAYMENTS (DASHBOARD / TRANSACTIONS)
        ============================= */
-    @GetMapping("/{paymentId}")
-    public PaymentResponse getPayment(@PathVariable String paymentId) {
+    @GetMapping
+    public List<PaymentResponse> listPayments() {
 
         Merchant merchant = MerchantContext.get();
 
-        Payment payment = paymentRepository
-                .findByIdAndMerchantId(paymentId, merchant.getId())
-                .orElseThrow(() ->
-                        new NotFoundException("Payment not found")
-                );
-
-        return PaymentResponse.from(payment);
+        return paymentRepository
+                .findAllByMerchantId(merchant.getId())
+                .stream()
+                .map(PaymentResponse::from)
+                .toList();
     }
 }

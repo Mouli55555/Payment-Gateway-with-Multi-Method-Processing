@@ -1,0 +1,57 @@
+body {
+  font-family: Inter, sans-serif;
+  background: #f5f7fb;
+}
+
+.navbar {
+  background: #111827;
+  color: white;
+  padding: 16px;
+}
+
+.checkout-container {
+  max-width: 420px;
+  margin: 30px auto;
+}
+
+.card {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.methods button {
+  width: 48%;
+  padding: 12px;
+  margin: 6px 1%;
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.pay-btn {
+  width: 100%;
+  padding: 14px;
+  background: #4f46e5;
+  color: white;
+  border-radius: 8px;
+  border: none;
+}
+
+.state {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.success { color: green; }
+.error { color: red; }

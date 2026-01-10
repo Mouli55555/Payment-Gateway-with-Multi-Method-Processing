@@ -1,11 +1,10 @@
 package com.gateway.controllers;
 
-import com.gateway.dto.response.HealthResponse;
 import com.gateway.services.HealthService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Instant;
+import java.util.Map;
 
 @RestController
 public class HealthController {
@@ -17,14 +16,12 @@ public class HealthController {
     }
 
     @GetMapping("/health")
-    public HealthResponse health() {
-
-        return new HealthResponse(
-                "healthy",
-                healthService.databaseStatus(),
-                healthService.redisStatus(),
-                healthService.workerStatus(),
-                Instant.now()
+    public Map<String, String> health() {
+        return Map.of(
+                "status", "ok",
+                "database", healthService.databaseStatus(),
+                "redis", healthService.redisStatus(),
+                "worker", healthService.workerStatus()
         );
     }
 }

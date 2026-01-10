@@ -5,6 +5,7 @@ import com.gateway.exception.*;
 import com.gateway.models.Merchant;
 import com.gateway.models.Order;
 import com.gateway.models.Payment;
+import com.gateway.repositories.MerchantRepository;
 import com.gateway.repositories.OrderRepository;
 import com.gateway.repositories.PaymentRepository;
 import org.springframework.core.env.Environment;
@@ -13,44 +14,58 @@ import org.springframework.stereotype.Service;
 import java.time.YearMonth;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class PaymentService {
 
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
+    private final MerchantRepository merchantRepository;
     private final Environment env;
+
     private final Random random = new Random();
 
     public PaymentService(
             OrderRepository orderRepository,
             PaymentRepository paymentRepository,
+            MerchantRepository merchantRepository,
             Environment env
     ) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
+        this.merchantRepository = merchantRepository;
         this.env = env;
     }
 
     // =============================
-    // CREATE PAYMENT
+    // PUBLIC PAYMENT (CHECKOUT)
+    // =============================
+    public Payment createPaymentPublic(CreatePaymentRequest request) {
+
+        Order order = orderRepository.findById(request.getOrder_id())
+                .orElseThrow(() -> new NotFoundException("Order not found"));
+
+        Merchant merchant = merchantRepository.findById(order.getMerchantId())
+                .orElseThrow(() -> new NotFoundException("Merchant not found"));
+
+        return createPayment(request, merchant);
+    }
+
+    // =============================
+    // CREATE PAYMENT (MERCHANT)
     // =============================
     public Payment createPayment(CreatePaymentRequest req, Merchant merchant) {
 
-        // 1️⃣ Fetch & verify order
         Order order = orderRepository
                 .findByIdAndMerchantId(req.getOrderId(), merchant.getId())
-                .orElseThrow(() ->
-                        new NotFoundException("Order not found")
-                );
+                .orElseThrow(() -> new NotFoundException("Order not found"));
 
-        // 2️⃣ Validate payment method
         String method = req.getMethod();
         if (!method.equals("upi") && !method.equals("card")) {
             throw new BadRequestException("Invalid payment method");
         }
 
-        // 3️⃣ Create payment with PROCESSING status
         Payment payment = new Payment();
         payment.setId(generatePaymentId());
         payment.setOrderId(order.getId());
@@ -58,9 +73,8 @@ public class PaymentService {
         payment.setAmount(order.getAmount());
         payment.setCurrency(order.getCurrency());
         payment.setMethod(method);
-        payment.setStatus("processing");
+        payment.setStatus("PROCESSING");
 
-        // 4️⃣ Method-specific validation
         if (method.equals("upi")) {
             validateUpi(req.getVpa());
             payment.setVpa(req.getVpa());
@@ -71,42 +85,48 @@ public class PaymentService {
             payment.setCardLast4(clean.substring(clean.length() - 4));
         }
 
-        // Save immediately (processing state)
         paymentRepository.save(payment);
 
-        // 5️⃣ Simulate processing delay
-        simulateDelay();
+        // ✅ ASYNC PAYMENT PROCESSING (NON-BLOCKING)
+        CompletableFuture.runAsync(() -> processPaymentAsync(payment.getId(), method));
 
-        // 6️⃣ Determine success/failure
+        return payment;
+    }
+
+    // =============================
+    // ASYNC PAYMENT SIMULATION
+    // =============================
+    private void processPaymentAsync(String paymentId, String method) {
+
+        simulateDelay();
         boolean success = determineOutcome(method);
 
+        Payment payment = paymentRepository.findById(paymentId).orElse(null);
+        if (payment == null) return;
+
         if (success) {
-            payment.setStatus("success");
+            payment.setStatus("SUCCESS");
         } else {
-            payment.setStatus("failed");
+            payment.setStatus("FAILED");
             payment.setErrorCode("PAYMENT_FAILED");
             payment.setErrorDescription("Payment processing failed");
         }
 
-        return paymentRepository.save(payment);
+        paymentRepository.save(payment);
     }
 
     // =============================
-    // HELPER METHODS
+    // SIMULATION HELPERS
     // =============================
-
     private void simulateDelay() {
         boolean testMode = Boolean.parseBoolean(env.getProperty("TEST_MODE", "false"));
-
         try {
             if (testMode) {
-                long delay = Long.parseLong(
+                Thread.sleep(Long.parseLong(
                         env.getProperty("TEST_PROCESSING_DELAY", "1000")
-                );
-                Thread.sleep(delay);
+                ));
             } else {
-                int delay = 5000 + random.nextInt(5000);
-                Thread.sleep(delay);
+                Thread.sleep(3000 + random.nextInt(3000));
             }
         } catch (InterruptedException ignored) {}
     }
@@ -127,7 +147,6 @@ public class PaymentService {
     // =============================
     // VALIDATIONS
     // =============================
-
     private void validateUpi(String vpa) {
         if (vpa == null || !vpa.matches("^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$")) {
             throw new InvalidVpaException();
@@ -142,17 +161,14 @@ public class PaymentService {
 
         String number = cleanCardNumber(req.getCard().getNumber());
 
-        // ✅ 1. Digits only + length check FIRST
         if (!number.matches("\\d{13,19}")) {
             throw ApiException.badRequest("INVALID_CARD", "Invalid card number");
         }
 
-        // ✅ 2. Luhn check
         if (!isValidLuhn(number)) {
             throw ApiException.badRequest("INVALID_CARD", "Invalid card number");
         }
 
-        // ✅ 3. Expiry check
         if (!isExpiryValid(
                 req.getCard().getExpiryMonth(),
                 req.getCard().getExpiryYear()
@@ -161,11 +177,9 @@ public class PaymentService {
         }
     }
 
-
     // =============================
-    // CARD UTILITIES
+    // CARD UTILS
     // =============================
-
     private String cleanCardNumber(String number) {
         return number.replaceAll("[\\s-]", "");
     }
@@ -186,38 +200,20 @@ public class PaymentService {
         return sum % 10 == 0;
     }
 
-
     private String detectCardNetwork(String number) {
-        try {
-            if (number.startsWith("4")) return "visa";
-
-            int firstTwo = Integer.parseInt(number.substring(0, 2));
-
-            if (firstTwo >= 51 && firstTwo <= 55) return "mastercard";
-            if (firstTwo == 34 || firstTwo == 37) return "amex";
-            if (firstTwo == 60 || firstTwo == 65 || (firstTwo >= 81 && firstTwo <= 89))
-                return "rupay";
-
-            return "unknown";
-        } catch (Exception e) {
-            return "unknown";
-        }
+        if (number.startsWith("4")) return "visa";
+        int firstTwo = Integer.parseInt(number.substring(0, 2));
+        if (firstTwo >= 51 && firstTwo <= 55) return "mastercard";
+        if (firstTwo == 34 || firstTwo == 37) return "amex";
+        if (firstTwo == 60 || firstTwo == 65) return "rupay";
+        return "unknown";
     }
-
 
     private boolean isExpiryValid(String monthStr, String yearStr) {
         int month = Integer.parseInt(monthStr);
         int year = Integer.parseInt(yearStr.length() == 2 ? "20" + yearStr : yearStr);
-
-        if (month < 1 || month > 12) return false;
-
-        YearMonth expiry = YearMonth.of(year, month);
-        return !expiry.isBefore(YearMonth.now());
+        return !YearMonth.of(year, month).isBefore(YearMonth.now());
     }
-
-    // =============================
-    // PAYMENT ID
-    // =============================
 
     private String generatePaymentId() {
         return "pay_" + UUID.randomUUID()

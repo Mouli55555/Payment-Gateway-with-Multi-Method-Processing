@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -9,26 +11,22 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      # Schema initialization (runs only on first DB creation)
       - ./backend/src/main/resources/schema.sql:/docker-entrypoint-initdb.d/schema.sql
-
-      # Persistent PostgreSQL data
       - pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway_user -d payment_gateway"]
       interval: 10s
       timeout: 5s
       retries: 5
+
   redis:
     image: redis:7
     container_name: gateway_redis
     ports:
       - "6379:6379"
 
-
   api:
-    build:
-      context: ./backend
+    build: ./backend
     container_name: gateway_api
     ports:
       - "8000:8000"
@@ -37,18 +35,14 @@ services:
       DATABASE_USERNAME: gateway_user
       DATABASE_PASSWORD: gateway_pass
       PORT: 8000
-
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
-      SPRING_REDIS_URL: ""
-      REDIS_URL: ""
     depends_on:
       postgres:
         condition: service_healthy
 
   dashboard:
-    build:
-      context: ./frontend
+    build: ./frontend
     container_name: gateway_dashboard
     ports:
       - "3000:80"
@@ -56,8 +50,7 @@ services:
       - api
 
   checkout:
-    build:
-      context: ./checkout-page
+    build: ./checkout-page
     container_name: gateway_checkout
     ports:
       - "3001:80"

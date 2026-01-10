@@ -49,4 +49,8 @@ public class CreatePaymentRequest {
     public void setCard(CardDetails card) {
         this.card = card;
     }
+
+    public String getOrder_id() {
+        return order_id;
+    }
 }
